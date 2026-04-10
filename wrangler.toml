@@ -7,12 +7,13 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "beemaster-users"
-database_id = "will be created"
+database_id = "10fc87a5-deb2-48d0-94ce-c60a2b3e8099"
 
-# Environment Variables (set via dashboard or wrangler secret)
+# Environment Variables (set via secrets)
 [vars]
 LITELLM_URL = "https://beemaster-llm.railway.app"
 
-# Secrets (set via: wrangler secret put LITELLM_MASTER_KEY)
+# Secrets (set via: wrangler secret put)
 # wrangler secret put LITELLM_MASTER_KEY
 # wrangler secret put GOOGLE_PLAY_SERVICE_ACCOUNT
+# wrangler secret put ADMIN_API_KEY
