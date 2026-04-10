@@ -6,15 +6,24 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 execute beemaster-users --file=./schema.sql"
+    "db:migrate": "wrangler d1 execute beemaster-users --file=./schema.sql",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:system": "vitest run tests/system",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
-    "hono": "^4.0.0",
-    "googleapis": "^130.0.0"
+    "hono": "^4.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240117.0",
+    "@vitest/coverage-v8": "^1.0.0",
     "typescript": "^5.3.0",
-    "wrangler": "^3.24.0"
+    "vitest": "^1.0.0",
+    "wrangler": "^3.24.0",
+    "miniflare": "^3.0.0",
+    "@types/node": "^20.0.0"
   }
 }
