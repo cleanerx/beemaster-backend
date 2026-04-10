@@ -1,0 +1,18 @@
+name = "beemaster-backend"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "beemaster-users"
+database_id = "will be created"
+
+# Environment Variables (set via dashboard or wrangler secret)
+[vars]
+LITELLM_URL = "https://beemaster-llm.railway.app"
+
+# Secrets (set via: wrangler secret put LITELLM_MASTER_KEY)
+# wrangler secret put LITELLM_MASTER_KEY
+# wrangler secret put GOOGLE_PLAY_SERVICE_ACCOUNT
