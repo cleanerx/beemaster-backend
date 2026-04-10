@@ -9,6 +9,7 @@ interface Env {
   LITELLM_MASTER_KEY: string
   GOOGLE_PLAY_SERVICE_ACCOUNT: string
   ADMIN_API_KEY: string
+  INTERNAL_API_KEY: string
 }
 
 interface User {
@@ -26,24 +27,20 @@ interface PurchaseRequest {
   device_id: string
 }
 
-interface AdminAuthRequest {
-  admin_key: string
-}
-
 const app = new Hono<{ Bindings: Env }>()
 
-// Enable CORS for Native Apps (not browser-restricted)
+// CORS for Native Apps
 app.use('/*', cors({
-  origin: ['*'],// Native Apps don't check CORS
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+  origin: ['*'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key', 'X-Internal-Key'],
 }))
 
 // Health Check
 app.get('/', (c) => {
   return c.json({
     service: 'beemaster-backend',
-    version: '1.0.0',
+    version: '1.1.0',
     status: 'healthy',
     timestamp: new Date().toISOString()
   })
@@ -59,7 +56,6 @@ function generateUUID(): string {
 
 // Helper: Get or Create User
 async function getOrCreateUser(db: D1Database, deviceId: string): Promise<User> {
-  // Check if user exists
   const existing = await db.prepare(
     'SELECT * FROM users WHERE user_id = ?'
   ).bind(deviceId).first<User>()
@@ -68,7 +64,6 @@ async function getOrCreateUser(db: D1Database, deviceId: string): Promise<User> 
     return existing
   }
 
-  // Create new user
   const virtualKey = `sk-beemaster-${generateUUID()}`
   const id = generateUUID()
 
@@ -87,6 +82,17 @@ async function getOrCreateUser(db: D1Database, deviceId: string): Promise<User> 
   }
 }
 
+// Helper: Verify Virtual Key
+async function verifyVirtualKey(db: D1Database, virtualKey: string): Promise<User | null> {
+  if (!virtualKey || !virtualKey.startsWith('sk-beemaster-')) {
+    return null
+  }
+  
+  return await db.prepare(
+    'SELECT * FROM users WHERE virtual_key = ?'
+  ).bind(virtualKey).first<User>()
+}
+
 // ============================================
 // PUBLIC ENDPOINTS (App)
 // ============================================
@@ -97,7 +103,7 @@ app.post('/api/v1/purchase/verify', async (c) => {
   const db = c.env.DB
 
   if (!purchase_token || !product_id || !device_id) {
-    return c.json({ error: 'Missing required fields' }, 400)
+    return c.json({ error: 'Missing required fields: purchase_token, product_id, device_id' }, 400)
   }
 
   // Credit mapping for products
@@ -123,18 +129,18 @@ app.post('/api/v1/purchase/verify', async (c) => {
     return c.json({ error: 'Purchase already verified' }, 400)
   }
 
-  // Get or Create User (Auto-creation)
+  // Get or Create User
   const user = await getOrCreateUser(db, device_id)
 
-  // TODO: Verify with Google Play API (requires service account)
+  // TODO: Verify with Google Play API
   // const isValid = await verifyGooglePlayPurchase(purchase_token, product_id)
-  const isValid = true // Placeholder for now
+  const isValid = true // Placeholder
 
   if (!isValid) {
     return c.json({ error: 'Invalid purchase' }, 400)
   }
 
-  // Update user credits
+  // Update credits
   await db.prepare(`
     UPDATE users 
     SET credits_balance = credits_balance + ?,
@@ -159,25 +165,6 @@ app.post('/api/v1/purchase/verify', async (c) => {
     VALUES (?, ?, ?, 'PURCHASE', ?, datetime('now'))
   `).bind(generateUUID(), user.user_id, credits, `Purchased ${product_id}`).run()
 
-  // Update LiteLLM budget (if configured)
-  if (c.env.LITELLM_URL && c.env.LITELLM_MASTER_KEY) {
-    try {
-      await fetch(`${c.env.LITELLM_URL}/user/update`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${c.env.LITELLM_MASTER_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          user_id: user.user_id,
-          max_budget: (updatedUser?.credits_balance || 0) * 0.01// $0.01 per credit
-        })
-      })
-    } catch (err) {
-      console.error('LiteLLM update failed:', err)
-    }
-  }
-
   return c.json({
     success: true,
     user_id: user.user_id,
@@ -187,39 +174,63 @@ app.post('/api/v1/purchase/verify', async (c) => {
   })
 })
 
-// Get Balance
+// Get Balance (Requires Virtual Key)
 app.get('/api/v1/user/balance', async (c) => {
-  const user_id = c.req.query('user_id')
+  const authHeader = c.req.header('Authorization')
+  const virtualKey = authHeader?.replace('Bearer ', '')
+  const userIdParam = c.req.query('user_id')
+  
   const db = c.env.DB
 
-  if (!user_id) {
-    return c.json({ error: 'user_id required' }, 400)
+  let user: User | null = null
+
+  // Option 1: Authenticate via Virtual Key
+  if (virtualKey && virtualKey.startsWith('sk-beemaster-')) {
+    user = await verifyVirtualKey(db, virtualKey)
+    if (!user) {
+      return c.json({ error: 'Invalid virtual key' }, 401)
+    }
+  }
+  // Option 2: Authenticate via User ID (for backward compatibility)
+  else if (userIdParam) {
+    user = await db.prepare(
+      'SELECT user_id, virtual_key, credits_balance, total_purchased FROM users WHERE user_id = ?'
+    ).bind(userIdParam).first()
+    
+    if (!user) {
+      // Auto-create for new users
+      user = await getOrCreateUser(db, userIdParam)
+    }
+  }
+  else {
+    return c.json({ error: 'Authentication required: provide Authorization header with virtual key or user_id parameter' }, 401)
   }
 
-  const user = await db.prepare(
-    'SELECT user_id, virtual_key, credits_balance, total_purchased FROM users WHERE user_id = ?'
-  ).bind(user_id).first()
-
-  if (!user) {
-    // Auto-create user if not exists (for free tier lookup)
-    const newUser = await getOrCreateUser(db, user_id)
-    return c.json({
-      user_id: newUser.user_id,
-      virtual_key: newUser.virtual_key,
-      credits_balance: newUser.credits_balance,
-      total_purchased: newUser.total_purchased
-    })
-  }
-
-  return c.json(user)
+  return c.json({
+    user_id: user.user_id,
+    virtual_key: user.virtual_key,
+    credits_balance: user.credits_balance,
+    total_purchased: user.total_purchased
+  })
 })
 
-// Credit Consumption (called by LiteLLM or App)
+// Credit Consumption (Called by LiteLLM - Internal API Key Required)
 app.post('/api/v1/credits/consume', async (c) => {
+  const internalKey = c.req.header('X-Internal-Key')
+  
+  // Verify this is called by LiteLLM (internal)
+  if (!internalKey || internalKey !== c.env.INTERNAL_API_KEY) {
+    return c.json({ error: 'Forbidden - Internal API only' }, 403)
+  }
+
   const { user_id, amount, description } = await c.req.json()
   const db = c.env.DB
 
-  // Check balance
+  if (!user_id || !amount) {
+    return c.json({ error: 'user_id and amount required' }, 400)
+  }
+
+  // Get user
   const user = await db.prepare(
     'SELECT credits_balance FROM users WHERE user_id = ?'
   ).bind(user_id).first<User>()
@@ -229,7 +240,7 @@ app.post('/api/v1/credits/consume', async (c) => {
   }
 
   if (user.credits_balance < amount) {
-    return c.json({ error: 'Insufficient credits' }, 400)
+    return c.json({ error: 'Insufficient credits', balance: user.credits_balance }, 400)
   }
 
   // Deduct credits
@@ -259,7 +270,6 @@ app.post('/api/v1/credits/consume', async (c) => {
 // ADMIN ENDPOINTS (Protected)
 // ============================================
 
-// Admin Auth Middleware
 async function verifyAdmin(c: any, next: any) {
   const adminKey = c.req.header('X-Admin-Key')
   
@@ -297,12 +307,10 @@ app.get('/api/v1/admin/users/:user_id', verifyAdmin, async (c) => {
     return c.json({ error: 'User not found' }, 404)
   }
 
-  // Get transactions
   const transactions = await db.prepare(
     'SELECT * FROM credit_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
   ).bind(user_id).all()
 
-  // Get purchases
   const purchases = await db.prepare(
     'SELECT * FROM purchases WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
   ).bind(user_id).all()
@@ -323,7 +331,6 @@ app.post('/api/v1/admin/users', verifyAdmin, async (c) => {
     return c.json({ error: 'user_id required' }, 400)
   }
 
-  // Check if user exists
   const existing = await db.prepare(
     'SELECT * FROM users WHERE user_id = ?'
   ).bind(user_id).first()
@@ -332,7 +339,6 @@ app.post('/api/v1/admin/users', verifyAdmin, async (c) => {
     return c.json({ error: 'User already exists' }, 400)
   }
 
-  // Create user
   const virtualKey = `sk-beemaster-${generateUUID()}`
   const id = generateUUID()
   const credits = initial_credits || 0
@@ -367,7 +373,6 @@ app.put('/api/v1/admin/users/:user_id/credits', verifyAdmin, async (c) => {
     return c.json({ error: 'amount required' }, 400)
   }
 
-  // Check if user exists
   const user = await db.prepare(
     'SELECT * FROM users WHERE user_id = ?'
   ).bind(user_id).first()
@@ -376,12 +381,10 @@ app.put('/api/v1/admin/users/:user_id/credits', verifyAdmin, async (c) => {
     return c.json({ error: 'User not found' }, 404)
   }
 
-  // Update credits
   await db.prepare(`
     UPDATE users SET credits_balance = credits_balance + ? WHERE user_id = ?
   `).bind(amount, user_id).run()
 
-  // Log transaction
   const transactionType = amount >= 0 ? 'BONUS' : 'DEDUCT'
   const absAmount = Math.abs(amount)
   
@@ -390,7 +393,6 @@ app.put('/api/v1/admin/users/:user_id/credits', verifyAdmin, async (c) => {
     VALUES (?, ?, ?, ?, ?, datetime('now'))
   `).bind(generateUUID(), user_id, absAmount, transactionType, reason || 'Admin adjustment').run()
 
-  // Get updated balance
   const updated = await db.prepare(
     'SELECT credits_balance FROM users WHERE user_id = ?'
   ).bind(user_id).first<User>()
@@ -408,7 +410,6 @@ app.delete('/api/v1/admin/users/:user_id', verifyAdmin, async (c) => {
   const user_id = c.req.param('user_id')
   const db = c.env.DB
 
-  // Check if user exists
   const user = await db.prepare(
     'SELECT * FROM users WHERE user_id = ?'
   ).bind(user_id).first()
@@ -417,17 +418,14 @@ app.delete('/api/v1/admin/users/:user_id', verifyAdmin, async (c) => {
     return c.json({ error: 'User not found' }, 404)
   }
 
-  // Delete transactions
   await db.prepare(
     'DELETE FROM credit_transactions WHERE user_id = ?'
   ).bind(user_id).run()
 
-  // Delete purchases
   await db.prepare(
     'DELETE FROM purchases WHERE user_id = ?'
   ).bind(user_id).run()
 
-  // Delete user
   await db.prepare(
     'DELETE FROM users WHERE user_id = ?'
   ).bind(user_id).run()

@@ -1,0 +1,48 @@
+# LiteLLM Configuration for Beemaster
+
+model_list:
+  - model_name: nemotron
+    litellm_params:
+      model: deepinfra/nvidia/Nemotron-3-Nano-30B-A3B
+      api_key: os.environ/DEEPINFRA_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+  # Callback to Beemaster Backend for credit deduction
+  callbacks:
+    - kind: custom_callback
+      callback_name: beemaster_credits
+      callback_type: success_callback
+      callback_func: beemaster_callback
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  
+  # Success callback for credit tracking
+  success_callback:
+    - kind: http
+      url: ${BEEMASTER_BACKEND_URL}/api/v1/credits/consume
+      headers:
+        X-Internal-Key: ${INTERNAL_API_KEY}
+
+router_settings:
+  routing_strategy: "simple-shuffle"
+  num_retries: 2
+  retry_after: 0.5
+  fallbacks:
+    - nemotron: []
+
+database:
+  type: postgres
+  host: ${POSTGRES_HOST}
+  port: 5432
+  database: beemaster_litellm
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+
+# User management for Virtual Keys
+user_api_key_vars:
+  BEEMASTER_BACKEND_URL: ${BEEMASTER_BACKEND_URL}
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY}

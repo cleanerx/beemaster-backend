@@ -3,6 +3,7 @@ pipeline {
     
     environment {
         CLOUDFLARE_API_TOKEN = credentials('cloudflare-api-token')
+        INTERNAL_API_KEY = credentials('beemaster-internal-key')
     }
     
     stages {
@@ -29,7 +30,7 @@ pipeline {
                 sh '''
                     export NVM_DIR="$HOME/.nvm"
                     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    npm install
+                    npm ci
                 '''
             }
         }
@@ -49,7 +50,7 @@ pipeline {
                 sh '''
                     export NVM_DIR="$HOME/.nvm"
                     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    npm run test:unit -- --reporter=verbose || true
+                    npm run test:unit -- --reporter=verbose
                 '''
             }
             post {
@@ -64,17 +65,18 @@ pipeline {
                 sh '''
                     export NVM_DIR="$HOME/.nvm"
                     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    npm run test:integration -- --reporter=verbose || true
+                    npm run test:integration -- --reporter=verbose
                 '''
             }
         }
         
-        stage('System Tests') {
+        stage('Security Tests') {
             steps {
                 sh '''
                     export NVM_DIR="$HOME/.nvm"
                     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    npm run test:system -- --reporter=verbose || true
+                    npm run test:unit -- tests/unit/auth.test.ts --reporter=verbose
+                    npm run test:integration -- tests/integration/security.test.ts --reporter=verbose
                 '''
             }
         }
@@ -98,6 +100,24 @@ pipeline {
                         reportName: 'Coverage Report'
                     ]) || true
                 }
+            }
+        }
+        
+        stage('Set Secrets') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                sh '''
+                    export NVM_DIR="$HOME/.nvm"
+                    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+                    
+                    echo "Setting INTERNAL_API_KEY..."
+                    echo "$INTERNAL_API_KEY" | npx wrangler secret put INTERNAL_API_KEY
+                '''
             }
         }
         
