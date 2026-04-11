@@ -1,0 +1,38 @@
+# LiteLLM Configuration for Beemaster - Railway Deployment
+
+model_list:
+  - model_name: nemotron
+    litellm_params:
+      model: deepinfra/nvidia/Nemotron-3-Nano-30B-A3B
+      api_key: os.environ/DEEPINFRA_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  # Enable custom callback for credit deduction
+  success_callback: ["beemaster_credits_callback"]
+  
+  # Callback settings
+  callbacks:
+    - callback_name: beemaster_credits_callback
+      callback_type: success_callback
+  
+  drop_params: true
+  set_verbose: false
+
+# Database for Virtual Key management (Railway PostgreSQL)
+database:
+  type: postgres
+  url: os.environ/DATABASE_URL
+
+# Router settings for failover
+router_settings:
+  routing_strategy: "simple-shuffle"
+  num_retries: 2
+  retry_after: 0.5
+
+# Environment variables passed to callbacks
+environment_variables:
+  BEEMASTER_BACKEND_URL: os.environ/BEEMASTER_BACKEND_URL
+  INTERNAL_API_KEY: os.environ/INTERNAL_API_KEY

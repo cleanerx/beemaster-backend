@@ -1,0 +1,19 @@
+# LiteLLM Proxy for Beemaster
+FROM ghcr.io/berriai/litellm:main-latest
+
+# Copy custom callback for credit deduction
+COPY callbacks/beemaster_callback.py /app/callbacks/
+
+# Copy LiteLLM config
+COPY litellm-config-railway.yaml /app/config.yaml
+
+# Set Python path for custom callbacks
+ENV PYTHONPATH=/app/callbacks:$PYTHONPATH
+
+EXPOSE 4000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:4000/health || exit 1
+
+CMD ["--config", "/app/config.yaml", "--port", "4000"]
