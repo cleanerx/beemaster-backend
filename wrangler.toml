@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "beemaster-users"
-database_id = "10fc87a5-deb2-48d0-94ce-c60a2b3e8099"
+database_id = "9723193f-e2a5-4f71-a837-e490b93b1445"
 
 # Environment Variables (set via secrets)
 [vars]
