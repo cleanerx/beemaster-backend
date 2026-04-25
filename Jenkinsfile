@@ -89,16 +89,19 @@ pipeline {
                     npm run test:coverage || true
                 '''
             }
-            post {
-                always {
-                    publishHTML(target: [
+        }
+        
+        stage('Publish Coverage') {
+            steps {
+                script {
+                    publishHTML([
                         allowMissing: true,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
                         reportDir: 'coverage',
                         reportFiles: 'index.html',
                         reportName: 'Coverage Report'
-                    ]) || true
+                    ])
                 }
             }
         }
@@ -117,6 +120,18 @@ pipeline {
                     
                     echo "Setting INTERNAL_API_KEY..."
                     echo "$INTERNAL_API_KEY" | npx wrangler secret put INTERNAL_API_KEY
+                    
+                    echo "Setting GOOGLE_PLAY_SERVICE_ACCOUNT..."
+                    echo "$GOOGLE_PLAY_SERVICE_ACCOUNT" | npx wrangler secret put GOOGLE_PLAY_SERVICE_ACCOUNT
+                    
+                    echo "Setting PLAY_INTEGRITY_SERVICE_ACCOUNT..."
+                    echo "$PLAY_INTEGRITY_SERVICE_ACCOUNT" | npx wrangler secret put PLAY_INTEGRITY_SERVICE_ACCOUNT
+                    
+                    echo "Setting LITELLM_MASTER_KEY..."
+                    echo "$LITELLM_MASTER_KEY" | npx wrangler secret put LITELLM_MASTER_KEY
+                    
+                    echo "Setting ADMIN_API_KEY..."
+                    echo "$ADMIN_API_KEY" | npx wrangler secret put ADMIN_API_KEY
                 '''
             }
         }
