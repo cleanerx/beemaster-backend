@@ -4,6 +4,10 @@ pipeline {
     environment {
         CLOUDFLARE_API_TOKEN = credentials('cloudflare-api-token')
         INTERNAL_API_KEY = credentials('beemaster-internal-key')
+        GOOGLE_PLAY_SERVICE_ACCOUNT = credentials('google-play-service-account')
+        PLAY_INTEGRITY_SERVICE_ACCOUNT = credentials('play-integrity-service-account')
+        LITELLM_MASTER_KEY = credentials('litellm-master-key')
+        ADMIN_API_KEY = credentials('admin-api-key')
     }
     
     stages {
@@ -154,14 +158,15 @@ pipeline {
     }
     
     post {
-        always {
-            cleanWs()
-        }
         success {
             echo '✅ Beemaster Backend Pipeline Successful'
         }
         failure {
             echo '❌ Beemaster Backend Pipeline Failed'
+        }
+        cleanup {
+            // Clean workspace after build
+            deleteDir()
         }
     }
 }
