@@ -17,3 +17,5 @@ LITELLM_URL = "https://beemaster-llm.railway.app"
 # wrangler secret put LITELLM_MASTER_KEY
 # wrangler secret put GOOGLE_PLAY_SERVICE_ACCOUNT
 # wrangler secret put ADMIN_API_KEY
+# wrangler secret put INTERNAL_API_KEY
+# wrangler secret put PLAY_INTEGRITY_SERVICE_ACCOUNT
